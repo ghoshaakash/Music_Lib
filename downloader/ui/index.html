@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLIB — Music Library Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0b0b0b;
+    --surface:  #111111;
+    --border:   #1e1e1e;
+    --border2:  #2a2a2a;
+    --amber:    #e8a225;
+    --amber2:   #f5c842;
+    --red:      #c0392b;
+    --green:    #27ae60;
+    --blue:     #2980b9;
+    --text:     #d4d0c8;
+    --muted:    #5a5a5a;
+    --dim:      #888;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:var(--bg); color:var(--text); font-family:'DM Mono', monospace; font-size:13px; overflow:hidden; }
+
+  /* Layout */
+  .shell { display:grid; grid-template-columns:220px 1fr; grid-template-rows:52px 1fr; height:100vh; }
+
+  /* Header */
+  header {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 0 24px;
+    background: var(--bg);
+  }
+  .logo { font-family:'Syncopate', sans-serif; font-size:15px; font-weight:700; letter-spacing:0.15em; color:var(--amber); }
+  .logo span { color:var(--muted); font-weight:400; }
+  .header-status { display:flex; gap:20px; align-items:center; }
+  .pill { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--dim); }
+  .dot { width:6px; height:6px; border-radius:50%; background:var(--muted); }
+  .dot.green { background:var(--green); box-shadow:0 0 6px var(--green); }
+  .dot.amber { background:var(--amber); box-shadow:0 0 6px var(--amber); animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* Sidebar */
+  nav {
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    background: var(--surface);
+    overflow-y: auto;
+  }
+  .nav-section { padding: 6px 16px; font-size:10px; letter-spacing:0.12em; color:var(--muted); text-transform:uppercase; margin-top:12px; }
+  .nav-item {
+    display:flex; align-items:center; gap:10px;
+    padding: 8px 16px; cursor:pointer;
+    color:var(--dim); transition:all 0.15s;
+    border-left: 2px solid transparent;
+    font-size:12px;
+  }
+  .nav-item:hover { color:var(--text); background:#181818; }
+  .nav-item.active { color:var(--amber); border-left-color:var(--amber); background:#161616; }
+  .nav-item .icon { width:14px; text-align:center; font-size:12px; }
+  .nav-badge { margin-left:auto; background:#1e1e1e; color:var(--amber); font-size:10px; padding:1px 6px; border-radius:2px; border:1px solid #2a2a2a; }
+
+  /* Main content */
+  main { overflow-y: auto; padding: 28px; background: var(--bg); }
+  .page { display:none; }
+  .page.active { display:block; animation: fadein 0.2s ease; }
+  @keyframes fadein { from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none} }
+
+  /* Page header */
+  .page-header { margin-bottom:24px; }
+  .page-title { font-family:'Syncopate', sans-serif; font-size:12px; letter-spacing:0.2em; color:var(--amber); text-transform:uppercase; }
+  .page-sub { font-family:'Instrument Serif', serif; font-style:italic; color:var(--muted); font-size:15px; margin-top:4px; }
+
+  /* Stats grid */
+  .stats-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:28px; }
+  .stat-card {
+    background:var(--surface); border:1px solid var(--border); padding:16px 18px;
+    position:relative; overflow:hidden;
+  }
+  .stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--border2); }
+  .stat-card.hl::before { background:var(--amber); }
+  .stat-label { font-size:10px; color:var(--muted); letter-spacing:0.1em; text-transform:uppercase; }
+  .stat-value { font-family:'Syncopate', sans-serif; font-size:22px; color:var(--text); margin-top:6px; }
+  .stat-sub { font-size:11px; color:var(--dim); margin-top:4px; }
+
+  /* Two col layout */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .full-col { grid-column:1/-1; }
+
+  /* Panel */
+  .panel { background:var(--surface); border:1px solid var(--border); }
+  .panel-head {
+    padding:10px 16px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:11px; letter-spacing:0.08em; color:var(--dim); text-transform:uppercase;
+  }
+  .panel-body { padding:16px; }
+
+  /* Buttons */
+  .btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:7px 14px; border:1px solid var(--border2); background:transparent;
+    color:var(--text); font-family:'DM Mono', monospace; font-size:12px;
+    cursor:pointer; transition:all 0.15s; letter-spacing:0.04em;
+  }
+  .btn:hover { border-color:var(--amber); color:var(--amber); }
+  .btn.primary { background:var(--amber); color:#000; border-color:var(--amber); font-weight:500; }
+  .btn.primary:hover { background:var(--amber2); border-color:var(--amber2); }
+  .btn.danger { border-color:#2a1a1a; color:var(--red); }
+  .btn.danger:hover { background:#1a0a0a; border-color:var(--red); }
+  .btn.sm { padding:4px 10px; font-size:11px; }
+  .btn:disabled { opacity:0.3; cursor:not-allowed; }
+  .btn-group { display:flex; gap:8px; flex-wrap:wrap; }
+
+  /* Table */
+  .table-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  thead tr { border-bottom:1px solid var(--border2); }
+  th { text-align:left; padding:8px 12px; font-size:10px; color:var(--muted); letter-spacing:0.1em; text-transform:uppercase; font-weight:400; }
+  td { padding:9px 12px; border-bottom:1px solid #141414; font-size:12px; vertical-align:middle; }
+  tr:hover td { background:#141414; }
+  .tag { display:inline-block; padding:2px 7px; border-radius:2px; font-size:10px; letter-spacing:0.06em; }
+  .tag.yt  { background:#1a1208; color:#e8a225; border:1px solid #2a1e0a; }
+  .tag.sp  { background:#0a1a10; color:#27ae60; border:1px solid #0e2616; }
+  .tag.ok  { background:#0a1a10; color:var(--green); border:1px solid #0e2616; }
+  .tag.pending { background:#1a1208; color:var(--amber); border:1px solid #2a1e0a; }
+  .tag.fail { background:#1a0a0a; color:var(--red); border:1px solid #2a0e0e; }
+  .tag.single { background:#0a1018; color:var(--blue); border:1px solid #0e1a2a; }
+
+  /* Input / form */
+  .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+  .form-group { display:flex; flex-direction:column; gap:6px; }
+  .form-group.full { grid-column:1/-1; }
+  label { font-size:11px; color:var(--dim); letter-spacing:0.06em; }
+  input, select, textarea {
+    background:#0d0d0d; border:1px solid var(--border2); color:var(--text);
+    font-family:'DM Mono', monospace; font-size:12px;
+    padding:8px 10px; outline:none; transition:border 0.15s; width:100%;
+  }
+  input:focus, select:focus, textarea:focus { border-color:var(--amber); }
+  select option { background:#111; }
+  textarea { resize:vertical; min-height:60px; }
+
+  /* Log terminal */
+  .terminal {
+    background:#080808; border:1px solid var(--border);
+    font-family:'DM Mono', monospace; font-size:12px; color:#8a9; padding:14px;
+    height:260px; overflow-y:auto; line-height:1.7;
+  }
+  .terminal .ts { color:var(--muted); }
+  .terminal .ok { color:var(--green); }
+  .terminal .warn { color:var(--amber); }
+  .terminal .err { color:var(--red); }
+  .terminal .info { color:#4a9eca; }
+
+  /* Sync status row */
+  .sync-row {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px; border-bottom:1px solid var(--border); transition:background 0.15s;
+  }
+  .sync-row:last-child { border-bottom:none; }
+  .sync-row:hover { background:#141414; }
+  .sync-name { font-size:12px; color:var(--text); }
+  .sync-meta { font-size:11px; color:var(--muted); margin-top:2px; }
+  .sync-actions { display:flex; gap:8px; }
+
+  /* Progress bar */
+  .progress-wrap { background:#111; border:1px solid var(--border); height:4px; margin-top:4px; }
+  .progress-bar { height:100%; background:var(--amber); transition:width 0.3s; }
+
+  /* Config block */
+  .config-file {
+    background:#080808; border:1px solid var(--border);
+    padding:12px 16px; margin-bottom:12px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .config-name { font-size:12px; color:var(--text); }
+  .config-path { font-size:11px; color:var(--muted); margin-top:2px; }
+
+  /* Tool card */
+  .tool-card {
+    background:var(--surface); border:1px solid var(--border);
+    padding:16px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .tool-name { font-size:13px; color:var(--text); }
+  .tool-ver { font-size:11px; color:var(--muted); margin-top:2px; }
+  .tool-ver span { color:var(--amber); }
+  .tools-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+
+  /* Toggle */
+  .toggle-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid #141414; }
+  .toggle-label { font-size:12px; color:var(--text); }
+  .toggle-desc { font-size:11px; color:var(--muted); margin-top:2px; }
+  .toggle { width:36px; height:18px; background:#1e1e1e; border:1px solid var(--border2); position:relative; cursor:pointer; transition:background 0.2s; }
+  .toggle.on { background:var(--amber); border-color:var(--amber); }
+  .toggle::after { content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; background:#666; transition:all 0.2s; }
+  .toggle.on::after { left:20px; background:#000; }
+
+  /* Separator */
+  .sep { height:1px; background:var(--border); margin:20px 0; }
+  .mt { margin-top:16px; }
+  .mb { margin-bottom:16px; }
+
+  /* Singleton section */
+  .single-form { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:end; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border2); }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">MLIB <span>/ Control</span></div>
+    <div class="header-status">
+      <div class="pill"><div class="dot green"></div> Navidrome</div>
+      <div class="pill"><div class="dot amber" id="syncDot"></div> <span id="syncStatus">Idle</span></div>
+      <div class="pill"><div class="dot"></div> <span id="clock"></span></div>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <nav>
+    <div class="nav-section">Overview</div>
+    <div class="nav-item active" onclick="goto('dashboard',this)">
+      <span class="icon">▦</span> Dashboard
+    </div>
+
+    <div class="nav-section">Library</div>
+    <div class="nav-item" onclick="goto('tracked',this)">
+      <span class="icon">◈</span> Tracked Sources
+      <span class="nav-badge" id="badgeTracked">0</span>
+    </div>
+    <div class="nav-item" onclick="goto('singleton',this)">
+      <span class="icon">♪</span> Single Songs
+    </div>
+
+    <div class="nav-section">Sync</div>
+    <div class="nav-item" onclick="goto('sync',this)">
+      <span class="icon">↻</span> Sync Manager
+    </div>
+    <div class="nav-item" onclick="goto('logs',this)">
+      <span class="icon">≡</span> Logs
+      <span class="nav-badge" id="badgeLogs">0</span>
+    </div>
+
+    <div class="nav-section">System</div>
+    <div class="nav-item" onclick="goto('tools',this)">
+      <span class="icon">⚙</span> Tools
+    </div>
+    <div class="nav-item" onclick="goto('config',this)">
+      <span class="icon">◎</span> Config &amp; Cookies
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <main>
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-header">
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub">Library at a glance</div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card hl">
+          <div class="stat-label">Total Tracks</div>
+          <div class="stat-value" id="statTracks">—</div>
+          <div class="stat-sub">in library</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Albums</div>
+          <div class="stat-value" id="statAlbums">—</div>
+          <div class="stat-sub">tagged</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Tracked Sources</div>
+          <div class="stat-value" id="statSources">—</div>
+          <div class="stat-sub">playlists + albums</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Last Sync</div>
+          <div class="stat-value" style="font-size:13px;margin-top:10px" id="statLastSync">Never</div>
+          <div class="stat-sub" id="statSyncResult">—</div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head">Recent Downloads</div>
+          <div class="panel-body">
+            <table>
+              <thead><tr><th>Title</th><th>Source</th><th>Status</th></tr></thead>
+              <tbody id="recentDownloads">
+                <tr><td colspan="3" style="color:var(--muted); text-align:center; padding:20px">No data yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">Quick Actions</div>
+          <div class="panel-body">
+            <div class="btn-group mb">
+              <button class="btn primary" onclick="triggerSync('all')">↻ Sync All</button>
+              <button class="btn" onclick="triggerSync('yt')">YouTube</button>
+            </div>
+            <div class="btn-group">
+              <button class="btn" onclick="goto('tools', document.querySelector('[onclick*=tools]'))">Update Tools</button>
+              <button class="btn" onclick="goto('logs', document.querySelector('[onclick*=logs]'))">View Logs</button>
+            </div>
+            <div class="sep"></div>
+            <div id="syncProgress" style="display:none">
+              <div style="font-size:11px; color:var(--amber); margin-bottom:6px" id="syncProgressLabel">Syncing...</div>
+              <div class="progress-wrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRACKED SOURCES -->
+    <div class="page" id="page-tracked">
+      <div class="page-header">
+        <div class="page-title">Tracked Sources</div>
+        <div class="page-sub">Playlists and albums being synced</div>
+      </div>
+
+      <!-- Add form -->
+      <div class="panel mb">
+        <div class="panel-head">Add Source</div>
+        <div class="panel-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label>NAME</label>
+              <input type="text" id="addName" placeholder="e.g. Tamil 90s Hits">
+            </div>
+            <div class="form-group">
+              <label>TYPE</label>
+              <select id="addType">
+                <option value="yt_playlist">YouTube Playlist</option>
+                <option value="yt_album">YouTube Album</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group full">
+              <label>URL</label>
+              <input type="text" id="addUrl" placeholder="https://...">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>LOCAL TAG / GENRE</label>
+              <input type="text" id="addTag" placeholder="e.g. lofi, tamil, workout">
+            </div>
+            <div class="form-group">
+              <label>AUTO SYNC</label>
+              <select id="addAutoSync">
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn primary" onclick="addSource()">+ Add Source</button>
+        </div>
+      </div>
+
+      <!-- Sources table -->
+      <div class="panel">
+        <div class="panel-head">
+          Sources <span id="sourceCount" style="margin-left:8px; color:var(--amber)">0</span>
+          <button class="btn sm" onclick="exportSources()">↓ Export playlists.yaml</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Type</th><th>Tag</th><th>Status</th><th>Auto</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sourcesTable">
+              <tr><td colspan="6" style="color:var(--muted); text-align:center; padding:20px">No sources added yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SINGLETON -->
+    <div class="page" id="page-singleton">
+      <div class="page-header">
+        <div class="page-title">Single Songs</div>
+        <div class="page-sub">One-off downloads outside tracked playlists</div>
+      </div>
+
+      <div class="panel mb">
+        <div class="panel-head">Download a Song</div>
+        <div class="panel-body">
+          <div class="form-row">
+            <div class="form-group full">
+              <label>YOUTUBE OR SPOTIFY URL</label>
+              <div class="single-form">
+                <input type="text" id="singleUrl" placeholder="https://youtube.com/watch?v=...">
+                <button class="btn primary" onclick="downloadSingle()">↓ Download</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>OVERRIDE ARTIST</label>
+              <input type="text" id="singleArtist" placeholder="Leave blank to auto-detect">
+            </div>
+            <div class="form-group">
+              <label>OVERRIDE ALBUM</label>
+              <input type="text" id="singleAlbum" placeholder="Leave blank to auto-detect">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">Download Queue</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Title</th><th>Source</th><th>Status</th><th>Added</th></tr></thead>
+            <tbody id="singletonTable">
+              <tr><td colspan="4" style="color:var(--muted); text-align:center; padding:20px">Queue empty</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SYNC MANAGER -->
+    <div class="page" id="page-sync">
+      <div class="page-header">
+        <div class="page-title">Sync Manager</div>
+        <div class="page-sub">Trigger and monitor sync jobs</div>
+      </div>
+
+      <div class="two-col mb">
+        <div class="panel">
+          <div class="panel-head">Manual Trigger</div>
+          <div class="panel-body">
+            <div class="btn-group mb">
+              <button class="btn primary" onclick="triggerSync('all')">↻ Full Sync</button>
+              <button class="btn" onclick="triggerSync('yt')">YouTube Only</button>
+            </div>
+            <div class="btn-group">
+              <button class="btn" onclick="triggerSync('failsafe')">⚑ Run Failsafe</button>
+              <button class="btn" onclick="triggerSync('metadata')">♦ Re-tag Metadata</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">Schedule (cron / launchd)</div>
+          <div class="panel-body">
+            <div class="toggle-row">
+              <div><div class="toggle-label">Auto Sync</div><div class="toggle-desc">Run sync on schedule</div></div>
+              <div class="toggle" id="toggleAutoSync" onclick="this.classList.toggle('on')"></div>
+            </div>
+            <div class="toggle-row">
+              <div><div class="toggle-label">Failsafe Check</div><div class="toggle-desc">Run 30min after main sync</div></div>
+              <div class="toggle" id="toggleFailsafe" onclick="this.classList.toggle('on')"></div>
+            </div>
+            <div class="form-group mt">
+              <label>SYNC INTERVAL</label>
+              <select>
+                <option>Every 6 hours</option>
+                <option>Every 12 hours</option>
+                <option>Daily at midnight</option>
+                <option>Manual only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">Source Sync Status</div>
+        <div id="syncRows">
+          <div style="color:var(--muted); padding:20px 16px; font-size:12px">Add sources first to see sync status here</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGS -->
+    <div class="page" id="page-logs">
+      <div class="page-header">
+        <div class="page-title">Logs</div>
+        <div class="page-sub">Sync, failsafe, and tool update history</div>
+      </div>
+
+      <div class="two-col mb">
+        <div>
+          <div style="display:flex; gap:8px; margin-bottom:10px">
+            <button class="btn sm active" onclick="switchLog('sync',this)">sync.log</button>
+            <button class="btn sm" onclick="switchLog('failsafe',this)">failsafe.log</button>
+            <button class="btn sm" onclick="switchLog('tools',this)">tools.log</button>
+          </div>
+          <div class="terminal" id="logTerminal">
+<span class="ts">[--:--:--]</span> <span class="info">MLIB control panel started</span>
+<span class="ts">[--:--:--]</span> <span class="ok">Waiting for backend connection...</span>
+<span class="ts">[--:--:--]</span> <span class="warn">No sync history found. Run a sync to populate logs.</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:10px; letter-spacing:0.08em; text-transform:uppercase">Log Files</div>
+          <div class="config-file">
+            <div><div class="config-name">sync.log</div><div class="config-path">downloader/logs/sync.log</div></div>
+            <button class="btn sm">↓ Download</button>
+          </div>
+          <div class="config-file">
+            <div><div class="config-name">failsafe.log</div><div class="config-path">downloader/logs/failsafe.log</div></div>
+            <button class="btn sm">↓ Download</button>
+          </div>
+          <div class="config-file">
+            <div><div class="config-name">tools.log</div><div class="config-path">downloader/logs/tools.log</div></div>
+            <button class="btn sm">↓ Download</button>
+          </div>
+          <div class="sep"></div>
+          <button class="btn danger sm" onclick="if(confirm('Clear all logs?'))clearLogs()">✕ Clear All Logs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOOLS -->
+    <div class="page" id="page-tools">
+      <div class="page-header">
+        <div class="page-title">Tools</div>
+        <div class="page-sub">Update and verify your download toolkit</div>
+      </div>
+
+      <div class="tools-grid">
+        <div class="tool-card">
+          <div>
+            <div class="tool-name">yt-dlp</div>
+            <div class="tool-ver">Current: <span id="ytdlpVer">unknown</span></div>
+          </div>
+          <div class="btn-group">
+            <button class="btn sm" onclick="checkTool('yt-dlp')">Check</button>
+            <button class="btn sm primary" onclick="updateTool('yt-dlp')">Update</button>
+          </div>
+        </div>
+        <div class="tool-card">
+          <div>
+            <div class="tool-name">beets</div>
+            <div class="tool-ver">Current: <span id="beetsVer">unknown</span></div>
+          </div>
+          <div class="btn-group">
+            <button class="btn sm" onclick="checkTool('beets')">Check</button>
+            <button class="btn sm primary" onclick="updateTool('beets')">Update</button>
+          </div>
+        </div>
+        <div class="tool-card">
+          <div>
+            <div class="tool-name">mutagen</div>
+            <div class="tool-ver">Current: <span id="mutagenVer">unknown</span></div>
+          </div>
+          <div class="btn-group">
+            <button class="btn sm" onclick="checkTool('mutagen')">Check</button>
+            <button class="btn sm primary" onclick="updateTool('mutagen')">Update</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-group mb">
+        <button class="btn primary" onclick="updateAll()">↑ Update All Tools</button>
+        <button class="btn" onclick="checkAll()">✓ Check All Versions</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">Tool Output</div>
+        <div class="terminal" id="toolTerminal">
+<span class="ts">[--:--:--]</span> <span class="info">Awaiting tool command...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONFIG -->
+    <div class="page" id="page-config">
+      <div class="page-header">
+        <div class="page-title">Config &amp; Cookies</div>
+        <div class="page-sub">Manage credentials and configuration files</div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:10px; letter-spacing:0.08em; text-transform:uppercase">Config Files</div>
+          <div class="config-file">
+            <div><div class="config-name">beets.yaml</div><div class="config-path">downloader/config/beets.yaml</div></div>
+            <div class="btn-group"><button class="btn sm" onclick="editConfig('beets')">Edit</button></div>
+          </div>
+          <div class="config-file">
+            <div><div class="config-name">playlists.yaml</div><div class="config-path">downloader/config/playlists.yaml</div></div>
+            <div class="btn-group"><button class="btn sm" onclick="editConfig('playlists')">Edit</button></div>
+          </div>
+          <div class="config-file">
+            <div>
+              <div class="config-name">cookies.txt <span class="tag pending" style="margin-left:6px">SENSITIVE</span></div>
+              <div class="config-path">downloader/config/cookies.txt · gitignored</div>
+            </div>
+            <div class="btn-group">
+              <button class="btn sm" onclick="editConfig('cookies')">Edit</button>
+              <button class="btn sm danger" onclick="clearCookies()">Clear</button>
+            </div>
+          </div>
+
+          <div class="sep"></div>
+
+          <div style="font-size:11px; color:var(--muted); margin-bottom:10px; letter-spacing:0.08em; text-transform:uppercase">Paths</div>
+          <div class="form-group mb">
+            <label>STAGING DIR</label>
+            <input type="text" placeholder="../data/staging">
+          </div>
+          <div class="form-group mb">
+            <label>LIBRARY DIR</label>
+            <input type="text" placeholder="../data/library">
+          </div>
+          <div class="form-group mb">
+            <label>PLAYLISTS DIR</label>
+            <input type="text" placeholder="../data/playlists">
+          </div>
+          <button class="btn primary">Save Paths</button>
+        </div>
+
+        <div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:10px; letter-spacing:0.08em; text-transform:uppercase">Sanity Checks</div>
+          <div class="panel mb">
+            <div class="panel-body">
+              <div class="toggle-row">
+                <div><div class="toggle-label">Check file integrity on sync</div></div>
+                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+              </div>
+              <div class="toggle-row">
+                <div><div class="toggle-label">Verify metadata after beets</div></div>
+                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+              </div>
+              <div class="toggle-row">
+                <div><div class="toggle-label">Alert on missing cover art</div></div>
+                <div class="toggle" onclick="this.classList.toggle('on')"></div>
+              </div>
+              <div class="toggle-row">
+                <div><div class="toggle-label">Deduplicate on import</div></div>
+                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+              </div>
+            </div>
+          </div>
+          <button class="btn" onclick="runSanity()">▶ Run Sanity Check Now</button>
+
+          <div class="sep"></div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:10px; letter-spacing:0.08em; text-transform:uppercase">Inline Editor</div>
+          <div id="inlineEditorLabel" style="font-size:11px; color:var(--dim); margin-bottom:6px">Select a config file to edit</div>
+          <textarea id="inlineEditor" style="width:100%; height:180px; background:#080808; border:1px solid var(--border2); color:var(--text); font-family:'DM Mono',monospace; font-size:12px; padding:10px;" placeholder="// config content will appear here"></textarea>
+          <button class="btn primary mt" onclick="saveConfig()" id="saveConfigBtn" disabled>Save</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let state = {
+  sources: JSON.parse(localStorage.getItem('mlib_sources') || '[]'),
+  singletons: JSON.parse(localStorage.getItem('mlib_singletons') || '[]'),
+  lastSync: localStorage.getItem('mlib_lastSync') || null,
+  currentConfig: null,
+};
+
+// ─── Clock ───────────────────────────────────────────────────────────────────
+function tick() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString('en-GB', {hour12:false});
+}
+setInterval(tick, 1000); tick();
+
+// ─── Navigation ──────────────────────────────────────────────────────────────
+function goto(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if(el) el.classList.add('active');
+  if(id === 'sync') renderSyncRows();
+}
+
+// ─── Source Management ───────────────────────────────────────────────────────
+function addSource() {
+  const name = document.getElementById('addName').value.trim();
+  const type = document.getElementById('addType').value;
+  const url  = document.getElementById('addUrl').value.trim();
+  const tag  = document.getElementById('addTag').value.trim();
+  const auto = document.getElementById('addAutoSync').value;
+
+  if(!name || !url) { alert('Name and URL required'); return; }
+
+  state.sources.push({ id: Date.now(), name, type, url, tag, auto, status:'pending', lastSync:null });
+  saveState();
+  renderSources();
+  renderStats();
+
+  document.getElementById('addName').value = '';
+  document.getElementById('addUrl').value = '';
+  document.getElementById('addTag').value = '';
+}
+
+function deleteSource(id) {
+  if(!confirm('Remove this source?')) return;
+  state.sources = state.sources.filter(s => s.id !== id);
+  saveState(); renderSources(); renderStats();
+}
+
+function renderSources() {
+  const tb = document.getElementById('sourcesTable');
+  document.getElementById('sourceCount').textContent = state.sources.length;
+  document.getElementById('badgeTracked').textContent = state.sources.length;
+
+  if(!state.sources.length) {
+    tb.innerHTML = '<tr><td colspan="6" style="color:var(--muted); text-align:center; padding:20px">No sources added yet</td></tr>';
+    return;
+  }
+
+  tb.innerHTML = state.sources.map(s => `
+    <tr>
+      <td>${s.name}</td>
+      <td>
+        <span class="tag yt">YT</span>
+        <span style="color:var(--muted); font-size:11px; margin-left:4px">${s.type.replace('yt_','')}</span>
+      </td>
+      <td style="color:var(--dim)">${s.tag||'—'}</td>
+      <td><span class="tag ${s.status}">${s.status}</span></td>
+      <td style="color:${s.auto==='yes'?'var(--green)':'var(--muted)'}">${s.auto}</td>
+      <td>
+        <div style="display:flex; gap:6px">
+          <button class="btn sm" onclick="syncOne(${s.id})">↻</button>
+          <button class="btn sm danger" onclick="deleteSource(${s.id})">✕</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderSyncRows() {
+  const el = document.getElementById('syncRows');
+  if(!state.sources.length) {
+    el.innerHTML = '<div style="color:var(--muted); padding:20px 16px; font-size:12px">Add sources first to see sync status here</div>';
+    return;
+  }
+  el.innerHTML = state.sources.map(s => `
+    <div class="sync-row">
+      <div>
+        <div class="sync-name">${s.name} <span class="tag yt" style="margin-left:6px">YT</span></div>
+        <div class="sync-meta">${s.url.substring(0,50)}... · Last: ${s.lastSync||'Never'}</div>
+      </div>
+      <div class="sync-actions">
+        <span class="tag ${s.status}">${s.status}</span>
+        <button class="btn sm" onclick="syncOne(${s.id})">↻ Sync</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── Singletons ──────────────────────────────────────────────────────────────
+function downloadSingle() {
+  const url = document.getElementById('singleUrl').value.trim();
+  if(!url) { alert('URL required'); return; }
+  const isYT = url.includes('youtube') || url.includes('youtu.be');
+  if(!isYT) { alert('Only YouTube URLs supported for downloads.\n\nFor Spotify tracks, find them on YouTube first.'); return; }
+  state.singletons.push({
+    id: Date.now(), url,
+    type: 'youtube',
+    status: 'queued',
+    added: new Date().toLocaleTimeString()
+  });
+  saveState(); renderSingletons();
+  document.getElementById('singleUrl').value = '';
+  logLine('sync', 'info', `Queued singleton: ${url.substring(0,50)}...`);
+}
+
+function renderSingletons() {
+  const tb = document.getElementById('singletonTable');
+  if(!state.singletons.length) {
+    tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted); text-align:center; padding:20px">Queue empty</td></tr>';
+    return;
+  }
+  tb.innerHTML = state.singletons.slice(-20).reverse().map(s => `
+    <tr>
+      <td style="color:var(--dim); font-size:11px">${s.url.substring(0,45)}...</td>
+      <td><span class="tag yt">YT</span></td>
+      <td><span class="tag ${s.status}">${s.status}</span></td>
+      <td style="color:var(--muted)">${s.added}</td>
+    </tr>
+  `).join('');
+}
+
+// ─── Sync Simulation ─────────────────────────────────────────────────────────
+function triggerSync(type) {
+  document.getElementById('syncDot').className = 'dot amber';
+  document.getElementById('syncStatus').textContent = 'Syncing';
+
+  const progress = document.getElementById('syncProgress');
+  const bar = document.getElementById('progressBar');
+  const label = document.getElementById('syncProgressLabel');
+  progress.style.display = 'block';
+
+  const steps = ['Fetching playlist metadata...', 'Downloading new tracks...', 'Running beets tagging...', 'Generating .m3u files...', 'Sync complete.'];
+  let pct = 0;
+  let i = 0;
+
+  logLine('sync', 'info', `Manual sync triggered: ${type}`);
+
+  const iv = setInterval(() => {
+    pct += 20; bar.style.width = pct + '%';
+    label.textContent = steps[i] || 'Finishing...'; i++;
+    logLine('sync', pct < 100 ? 'ok' : 'ok', steps[i-1] || '');
+    if(pct >= 100) {
+      clearInterval(iv);
+      setTimeout(() => {
+        document.getElementById('syncDot').className = 'dot green';
+        document.getElementById('syncStatus').textContent = 'Idle';
+        progress.style.display = 'none';
+        const now = new Date().toLocaleString();
+        document.getElementById('statLastSync').textContent = new Date().toLocaleTimeString();
+        document.getElementById('statSyncResult').textContent = 'completed ok';
+        state.lastSync = now;
+        localStorage.setItem('mlib_lastSync', now);
+        logLine('sync', 'ok', 'Sync finished successfully.');
+      }, 800);
+    }
+  }, 700);
+}
+
+function syncOne(id) {
+  const s = state.sources.find(x => x.id === id);
+  if(!s) return;
+  s.status = 'syncing'; renderSources();
+  setTimeout(() => {
+    s.status = 'ok';
+    s.lastSync = new Date().toLocaleTimeString();
+    saveState(); renderSources(); renderSyncRows();
+    logLine('sync', 'ok', `Synced: ${s.name}`);
+  }, 1500);
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+function renderStats() {
+  document.getElementById('statSources').textContent = state.sources.length;
+  document.getElementById('statTracks').textContent = '—';
+  document.getElementById('statAlbums').textContent = '—';
+}
+
+// ─── Logs ─────────────────────────────────────────────────────────────────────
+function logLine(log, type, msg) {
+  const el = document.getElementById('logTerminal');
+  if(!el) return;
+  const ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
+  el.innerHTML += `\n<span class="ts">[${ts}]</span> <span class="${type}">${msg}</span>`;
+  el.scrollTop = el.scrollHeight;
+  const count = parseInt(document.getElementById('badgeLogs').textContent || 0);
+  document.getElementById('badgeLogs').textContent = count + 1;
+}
+
+function switchLog(name, btn) {
+  document.querySelectorAll('.page#page-logs .btn.sm').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('logTerminal').innerHTML = `<span class="ts">[--:--:--]</span> <span class="info">Showing ${name}.log — connect backend to stream live logs.</span>`;
+}
+
+function clearLogs() {
+  document.getElementById('logTerminal').innerHTML = '<span class="ts">[--:--:--]</span> <span class="ok">Logs cleared.</span>';
+  document.getElementById('badgeLogs').textContent = '0';
+}
+
+// ─── Tools ────────────────────────────────────────────────────────────────────
+function toolLog(msg, type='info') {
+  const el = document.getElementById('toolTerminal');
+  const ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
+  el.innerHTML += `\n<span class="ts">[${ts}]</span> <span class="${type}">${msg}</span>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function checkTool(name) {
+  toolLog(`Checking ${name}...`);
+  setTimeout(() => toolLog(`${name} — version check requires backend connection.`, 'warn'), 600);
+}
+
+function updateTool(name) {
+  toolLog(`Updating ${name}...`, 'ok');
+  setTimeout(() => toolLog(`pip install --upgrade ${name} — queued. Connect backend to execute.`, 'warn'), 600);
+}
+
+function checkAll() { ['yt-dlp','beets','mutagen'].forEach(t => checkTool(t)); }
+function updateAll() { ['yt-dlp','beets','mutagen'].forEach((t,i) => setTimeout(()=>updateTool(t), i*400)); }
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+const configTemplates = {
+  beets: `# beets configuration\ndirectory: ../data/library\nlibrary: ../data/beets.db\n\nimport:\n  move: yes\n\nplugins: fetchart scrub spotify\n\nspotify:\n  source_weight: 0.9\n\nfetchart:\n  auto: yes`,
+  playlists: `# Tracked playlists\n# Add your YouTube and Spotify sources here\n\nsources:\n  - name: My Playlist\n    type: yt_playlist\n    url: https://youtube.com/playlist?list=...\n    tag: general\n    auto_sync: true`,
+  cookies: `# Netscape HTTP Cookie File\n# Generated by browser extension\n# Place your YouTube cookies here for age-restricted content`
+};
+
+function editConfig(name) {
+  state.currentConfig = name;
+  document.getElementById('inlineEditorLabel').textContent = `Editing: ${name}.yaml`;
+  document.getElementById('inlineEditor').value = configTemplates[name] || '';
+  document.getElementById('saveConfigBtn').disabled = false;
+}
+
+function saveConfig() {
+  if(!state.currentConfig) return;
+  configTemplates[state.currentConfig] = document.getElementById('inlineEditor').value;
+  alert('Config saved (in memory). Connect backend to write to disk.');
+}
+
+function clearCookies() {
+  if(!confirm('Clear cookies.txt? This may break YouTube downloads.')) return;
+  document.getElementById('inlineEditor').value = '';
+  configTemplates.cookies = '';
+  alert('Cookies cleared.');
+}
+
+function runSanity() {
+  logLine('sync', 'info', 'Running sanity check...');
+  setTimeout(() => logLine('sync', 'ok', 'Sanity check complete — connect backend to run real checks.'), 800);
+}
+
+function exportSources() {
+  const yaml = `sources:\n${state.sources.map(s => `  - name: ${s.name}\n    type: ${s.type}\n    url: ${s.url}\n    tag: ${s.tag||''}\n    auto_sync: ${s.auto==='yes'}`).join('\n')}`;
+  const blob = new Blob([yaml], {type:'text/yaml'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'playlists.yaml'; a.click();
+}
+
+// ─── Persist ─────────────────────────────────────────────────────────────────
+function saveState() {
+  localStorage.setItem('mlib_sources', JSON.stringify(state.sources));
+  localStorage.setItem('mlib_singletons', JSON.stringify(state.singletons));
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+renderSources();
+renderSingletons();
+renderStats();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+directory: /Users/aakash/Documents/GitHub/Music_Lib/data/library
+library: /Users/aakash/Documents/GitHub/Music_Lib/data/beets.db
+
+import:
+  move: yes
+  write: yes
+  quiet: no
+  autotag: yes
+  singletons: yes      # treat every import as individual tracks
+  
+match:
+  strong_rec_thresh: 0.7
+  medium_rec_thresh: 0.7
+
+plugins:
+  - fetchart
+  - spotify
+
+paths:
+  default: $album/$title
+  singleton: Unknown/$title
+
+fetchart:
+  auto: yes
+  sources:
+    - spotify
+    - coverart
+    - itunes
+    - amazon
+
+spotify:
+  data_source_mismatch_penalty: 0.9
