@@ -1,60 +1,72 @@
-import json
-import os
-from datetime import datetime
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import parse_qs, urlparse
 
-PLAYLISTS_FILE = os.path.join(os.path.dirname(__file__), "../config/playlists.json")
-
-
-def read_all() -> list:
-    """Read playlists from JSON file"""
-    with open(PLAYLISTS_FILE, "r") as f:
-        return json.load(f)
-
-
-def write_all(data: list) -> None:
-    """Write playlists back to JSON file"""
-    with open(PLAYLISTS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+from .download import download_and_tag
+from .state import (
+    load_state,
+    update_track,
+    track_exists,
+    update_playlist,
+)
 
 
-def add(name: str, url: str) -> dict:
-    """Add a new playlist, return it"""
-    playlists = read_all()
-
-    new_id = max((p["id"] for p in playlists), default=0) + 1
-
-    entry = {
-        "id": new_id,
-        "name": name,
-        "url": url,
-        "last_synced": None,
-        "tracks": []
-    }
-
-    playlists.append(entry)
-    write_all(playlists)
-    return entry
+def extract_playlist_id(url: str) -> str:
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+    return qs.get("list", [""])[0]
 
 
-def delete(playlist_id: int) -> bool:
-    """Remove playlist by id, return True if found"""
-    playlists = read_all()
+def fetch_track_ids(url: str) -> list[str]:
+    import subprocess
 
-    match = next((p for p in playlists if p["id"] == playlist_id), None)
-    if not match:
-        return False
+    cmd = ["yt-dlp", "--flat-playlist", "--no-warnings", "--print", "%(id)s", url]
+    result = subprocess.run(cmd, capture_output=True, text=True)
 
-    write_all([p for p in playlists if p["id"] != playlist_id])
-    return True
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr)
+
+    return [x.strip() for x in result.stdout.splitlines() if x.strip()]
 
 
-def mark_synced(playlist_id: int) -> None:
-    """Update last_synced timestamp after a successful sync"""
-    playlists = read_all()
+def process_playlist(url: str, workers: int = 4):
 
-    for p in playlists:
-        if p["id"] == playlist_id:
-            p["last_synced"] = datetime.now().isoformat()
-            break
+    state = load_state()
 
-    write_all(playlists)
+    playlist_id = extract_playlist_id(url)
+    yt_ids = fetch_track_ids(url)
+
+    # Update playlist metadata
+    update_playlist(state, playlist_id, url, yt_ids)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+
+        futures = {}
+
+        for yt_id in yt_ids:
+
+            existing = track_exists(state, yt_id)
+
+            # Skip if file exists
+            if existing:
+                file_path = Path("data/library") / existing["file_path"]
+                if file_path.exists():
+                    print(f"✓ Skipping {yt_id}")
+                    continue
+
+            futures[executor.submit(download_and_tag, yt_id)] = yt_id
+
+        for future in as_completed(futures):
+            yt_id = futures[future]
+            result = future.result()
+
+            if result["status"] == "ok":
+                update_track(state, yt_id, {
+                    "spotify_id": result["spotify_id"],
+                    "title": result["title"],
+                    "album": result["album"],
+                    "file_path": result["track_path"],
+                })
+                print(f"✔ Added {yt_id}")
+            else:
+                print(f"✗ Failed {yt_id}: {result}")
